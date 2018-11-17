@@ -1,0 +1,190 @@
+---
+title: "The Trial of Sam Haynes"
+output: html_notebook
+---
+Sam has been abandonded for two weeks on the lost island of bayesian inference.
+
+    Will he be able to learn the skills require to survive? 
+    
+## The Loch Normal Monster
+
+Bathing in the waters of bayesian ignorance, Sam had become bogged down by the highly extensive (Gasch *et al*, 2000) study, Genomic Expression Programs in the Response of Yeast Cells to Environmental Changes. Could he successfully fit a lognormal distribution to a chosen subset of its expression data or would he be swept up by the eddies of eternal self-pity?
+
+### Cataclysmic start
+
+Well, it turned out that simply accessing (Gasch *et al*, 2000) was a bit of a beast, 18 years and it hasn't aged very well. First off, the link to the original data from the online paper took Sam to a non-existent server, several google searches later and the original data was found. Unfortunately, the file was an archaic tab delimited type and wasn't clearly explained (love a good *.txt suffix) so rather a lot of time was wasted finding that out. On top of that the file was poorly formated so half the data was imported to jibberish (Anyone who uses whitespace to separate columns and rows needs their computer rights revoked, to go back to primary school and preferably be given a lobotomy). Naturally Sam's innate computering proficiency breezed past these challenges, ...humph..., only to find the true meaning of _raw_ data, it gave him the direct intensities detected for the microarrays rather than actual count data. Much raving and screaming later, Sam stumbled upon the exact data required on the NCBI's website. (At least it is hometime now...)
+
+It has also dawn on him that his supervisor wanted him to use the paper by (Schurch *et al*, 2016)  not (Gasch *et al*, 2000), he was sad.
+
+```{r gaschCompleteFail}
+failedCompleteGaschDataSet <- read.table("~/Documents/WallaceLab/code/RNAFracQuant/Notebook/gaschDataSet/complete_dataset_old.txt",header=TRUE,fill=TRUE,sep="\t")
+failedCompleteGaschDataSet
+```
+
+```{r gaschPartialFail}
+# Instead of importing the entire Gasch Data set all at once, there was the option of downloading it sample by sample 
+#(where each sample grew under different conditions)
+attemptPartialGaschDataSet <- read.table("~/Documents/WallaceLab/code/RNAFracQuant/Notebook/gaschDataSet/y11n63.out",header=TRUE,fill=TRUE,sep="\t")
+attemptPartialGaschDataSet
+```
+
+```{r gaschSavingGraceFail}
+# One of many attempts to remove the dire formating inflicted by tab delimited
+improvedPartialGaschDataSet <- attemptPartialGaschDataSet
+improvedPartialGaschDataSet[,1:9] <- NULL 
+PartialDataSet
+```
+
+### A New Dawn
+The very next day...
+
+Despite drowning for a little over a day now, Sam was still alive and combating the correct monster under the name of (Schurch et al, 2016). 
+
+```{r schurchRawTimeWaster}
+# Schurch data comes in a *.sra file format off the NCBI website which requires a function maintained by bioconductor to read
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("SRAdb", version = "3.8")
+```
+
+### Second Dawn on Tattoine 
+
+It was now Thursday, after a brief interlude on Wednesday (Bioinformatics outreach in Glasgow) and a disjointed Tuesday (consisted of brief bouts with the data wrangling beast interjected with Ashworth Bioinformatics club meeting and School of Biology Press gang), Sam found himself once again exactly where he started on Monday. 
+
+It appeared the raw files attempted to be opened above, contained the prealigned RNA fragments from the RNA sequencing machine. On (Schurch *et al*, 2016)'s github repository, there was code for aligning the fragments, which he orignally attempted to use himself on Tuesday. However, eventually he also found files possibly containing the actual count data.
+
+```{r schurchPreProcessedTimeWaster}
+# The count data is in a .bam file so a different library to required to read it
+source("http://bioconductor.org/biocLite.R")
+biocLite("Rsamtools")
+```
+
+```{r schurchMutantUntar}
+# Count data is packed in a tar file which needs to be unpacked
+untar("../schurch2016Repo/Preprocessed_data/Snf2_countdata.tar.gz", exdir = "./schurchDataSet/snf2Mutant")
+```
+
+```{r schurchScamBamFail}
+# Attempt to use the Bam file reader in Rsamtools, evidently fails
+ourSamsRsamScanBamBamScan <- scanBam("./schurchDataSet/snf2Mutant/Snf2_rep01_MID96_allLanes_tophat2.0.5.bam")
+```
+
+```{r schurchBasicReadSucceed}
+# Tried a basic read file command which works perfectly
+attempt <- read.table("./schurchDataSet/snf2Mutant/Snf2_rep01_MID96_allLanes_tophat2.0.5.bam")
+```
+
+**Progress:** With access to the (Schurch *et al*, 2016) data set confirmed to be possible, Sam could now begin the main quest of slaying the _Loch Normal Beast_. This data set consists of 48 replicates for each of the two types of _S. cerevisiae_, one wild type and one snf2 mutant, snf2 is a protein used in transcription regulation. 
+ 
+ Sam ignored the mutant data to begin with and started the task of feeding the wild type RNA count data to the _Loch Normal Beast_.
+ 
+```{r importLogNormalData}
+# The wild type data needs to be extracted from its various files and imported into a R variable
+untar("../schurch2016Repo/Preprocessed_data/WT_countdata.tar.gz",exdir = "./schurchDataSet/wildType")
+wildTypeFileNames <- list.files("./schurchDataSet/wildType", full.names=TRUE)
+wildTypeData <- lapply(wildTypeFileNames,read.table)
+```
+
+### Clean Shave, Clean Slate
+Sam had a new look and a s*** tonne of work to do. It was friday and the problem at hand could finally be tackled (fingers crossed it'll be plain sailing from now on).
+
+```{r mergeWildData}
+# Merge replicates into same dataframe
+library(reshape2) # package for rearranging data-frames
+combinedWildTypeData <- wildTypeData[[1]]
+for(i in 2:48){
+  combinedWildTypeData <- merge(combinedWildTypeData,wildTypeData[[i]],by="V1") # replicates are merged horizontally by introducing new columns
+}
+```
+
+```{r colNameWildData}
+# Give combinedWildTypeData columns suitable names
+columnNames <- vector(mode="character", length=49)
+columnNames[1] <- "transcriptName" 
+for(i in 1:48) columnNames[i+1] <- paste0("Replicate_",i)
+colnames(combinedWildTypeData) <- columnNames
+```
+
+```{r cleanWildData}
+# Remove any consistantly low count data
+library(magrittr) # pipe R package
+library(tidyverse) # dataframe manipulation package
+usableTranscripts <- 
+    combinedWildTypeData %>%
+      melt(id="transcriptName") %>%
+        group_by(transcriptName) %>%
+          summarise(sufficientCounts = sum(value > 5),keep=(sufficientCounts==48)) %>%
+            filter(keep) %$%
+              transcriptName
+cleanWildTypeData <- 
+    combinedWildTypeData %>%
+      ungroup() %>%
+        filter(transcriptName %in% usableTranscripts) 
+```
+The count data was now in an ideal format to be used by Stan for creating bayesian inference models. The questions following remained, however:
+
+    Why is a lognormal distribution fitted to the actual cell transcript count data while the messy RNA seq count data from experiment is modelled by a negative binomial (or gamma-poisson) distribution?
+    
+    Is it necessary to fit seperate lognormal distributions to all of the individual transcripts? Is there a way of feeding information between the seperate RNA transcript models to account for experimental variability? (since this is still RNA seq output not actual count data)
+    
+    Could it be possible to look into batch effects in this data? Is there any data on the actual dates which the experiments were conducted on?
+
+### The Mark of the Beast
+$$ lognormal(\mu,\sigma)=\frac{1}{x\sigma\sqrt{2\pi}}exp\Bigg(\frac{(ln(x)-\mu)^2}{2\sigma^2}\Bigg) $$
+*Properties of the lognormal distribution:*
+
+* By definition, the logarithm of the random variable, $x$, is normally distributed.
+* The exponential of the mean and standard deviation of the lognormal is _NOT_ equal to the mean and standard deviation of the untransformed random variable.
+* Since the moment generating function is not defined for the lognormal distribution, it is not a member of the natual exponential family, which contains the normal, poisson and negative binomial.
+
+$$ P(X_{Act}|X_{Obs},\mu.\sigma^2) = \frac{P(X_{Obs}|X_{Act},\mu.\sigma^2)P(X_{Act},\mu,\sigma^2)}{P(X_{obs})} $$
+$$ P(X_{Act}|X_{Obs},\mu.\sigma^2) \propto P(X_{Obs}|X_{Act},\mu.\sigma^2)P(X_{Act},\mu,\sigma^2)$$
+```{r stanSetup}
+library(rstan)
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+```
+```{r lognormalStanModel}
+stan(model_code='// -*- mode: C -*-
+data {
+  // Number of RNAs
+  int<lower=1> NRNA;     
+  
+  // Note: These are all integers
+  // columns t, s, p
+  int<lower=0> counts[NRNA][48];
+}
+parameters {
+  // Unnormalized mixing proportions
+  // real<lower=0> mixing_t;
+  real<lower=0> mixing_sup;
+  real<lower=0> mixing_p100;
+  
+  // dispersion parameter for counts
+  real phi;
+}
+model{
+  // mixing ratios
+  mixing_sup ~ gamma(1,1);
+  mixing_p100 ~ gamma(1,1);
+  // Cauchy prior for negbin dispersion parameter
+  phi ~ cauchy(0,3);
+  
+  for(idx in 1:NRNA){ 
+    // count distn negative binomial with specified means
+    // Total
+    tot_obs[idx] ~ neg_binomial_2(mixing_sup * sup_obs[idx] + mixing_p100 * p100_obs[idx], phi);
+  }
+
+}
+generated quantities{
+  // print("Mixing pars (sup,p100) = (", mixing_sup,",",mixing_p100,")");
+  // print("dispersion phi = ", phi);
+  // print("------------------");
+}
+',
+data=stan_dat,chains = 1,iter = 10)
+}
+```
+  
+
